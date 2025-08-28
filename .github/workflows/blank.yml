@@ -44,7 +44,9 @@ jobs:
             libmpfr-dev \
             libgmp-dev \
             build-essential \
-            curl
+            curl \
+            pkg-config \
+            libsoup-3.0-dev   # 👈 加这一行
 
       - name: 安装 Rust
         uses: actions-rs/toolchain@v1
