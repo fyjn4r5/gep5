@@ -1,84 +1,95 @@
-name: Build and Release AppImage
+name: 构建迷雾通5 Mint 21 (Ubuntu 22.04)
 
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - "v*"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
-
+  build_geph5:
+    name: 为 Ubuntu ${{ matrix.ubuntu_version }} 构建迷雾通5
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.ubuntu_version }}
+    strategy:
+      matrix:
+        include:
+          - ubuntu_version: ubuntu-22.04
+            webkit_pkg: libwebkit2gtk-4.0-dev
+          # 如果未来 GitHub 支持 ubuntu-24.04，可以加：
+          # - ubuntu_version: ubuntu-24.04
+          #   webkit_pkg: libwebkit2gtk-4.1-dev
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: 创建构建文件夹
+        run: mkdir ./build
 
-      - name: Update apt and install dependencies
+      - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libssl-dev \
+          sudo apt-get install -y --no-install-recommends \
             libgtk-3-dev \
-            pkg-config \
+            libappindicator3-dev \
+            ${{ matrix.webkit_pkg }} \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            strace \
             libpango1.0-dev \
             libgdk-pixbuf2.0-dev \
+            gcc \
             clang \
             g++ \
             zlib1g-dev \
             libmpc-dev \
             libmpfr-dev \
             libgmp-dev \
+            build-essential \
             curl \
-            pkg-config \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.0-dev \
-            fuse \
-            libfuse-dev \
-            appimagetool
+            libprotobuf-dev \
+            cmake \
+            libprotobuf-c-dev \
+            pkg-config
 
-      - name: Install Rust
+      - name: 安装 Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
 
-      - name: Install pnpm
+      - name: 安装 pnpm
         uses: pnpm/action-setup@v2
         with:
           version: 9
 
-      - name: Clone geph5 repository
+      - name: 克隆 geph5 仓库
         run: git clone --recurse-submodules https://github.com/geph-official/geph5.git
 
-      - name: Build geph5-client
+      - name: 构建 geph5-client
         run: |
           cd geph5
           cargo build --release --bin geph5-client
           cp target/release/geph5-client ../build/
 
-      - name: Clone gephgui-wry repository
+      - name: 克隆 gephgui-wry 仓库
         run: git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
 
-      - name: Build gephgui
+      - name: 构建 gephgui
         run: |
           cd gephgui-wry/gephgui
           pnpm install
           pnpm build
 
-      - name: Build gephgui-wry
+      - name: 构建 gephgui-wry
         run: |
           cd gephgui-wry
           cargo build --release
           cp target/release/gephgui-wry ../build/
 
-      - name: Generate PAC file
+      - name: 生成 PAC 文件
         run: |
           echo 'function FindProxyForURL(url, host) { return "SOCKS5 127.0.0.1:9909; DIRECT"; }' > build/pac
 
-      - name: Generate VERSION file
+      - name: 生成 VERSION 文件
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "${{ github.ref_name }}" > build/VERSION
@@ -86,20 +97,14 @@ jobs:
             echo "dev-$(git rev-parse --short HEAD)" > build/VERSION
           fi
 
-      - name: Create TAR file
+      - name: 创建 TAR 压缩包
         run: |
           cd build
-          tar -Jcvf ../build_geph5_${{ github.ref_name }}_ubu2404.tar.xz .
+          tar -Jcvf ../build_geph5_${{ github.ref_name }}_ubu2204.tar.xz .
           cd ..
-          mkdir -p release && mv build_*.tar.xz release/
+          mkdir release && mv build_*.tar.xz release/
 
-      - name: Build AppImage
-        run: |
-          cd build
-          appimagetool gephgui-wry-*.AppDir
-          mv gephgui-wry-*.AppImage ../release/
-
-      - name: Upload release assets
+      - name: 发布二进制文件
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
