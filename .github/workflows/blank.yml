@@ -228,4 +228,4 @@ jobs:
 
       - name: 创建 AppImage
         run: |
-          appimagetool
+          appimagetool Geph5.AppDir ../geph5-${{ github.ref_name }}-${{ matrix.ubuntu_version }}.AppImage
