@@ -91,7 +91,7 @@ jobs:
           cd build
           tar -Jcvf ../build_geph5_${{ github.ref_name }}_ubu2404.tar.xz .
           cd ..
-          mkdir release && mv build_*.tar.xz release/
+          mkdir -p release && mv build_*.tar.xz release/
 
       - name: Build AppImage
         run: |
