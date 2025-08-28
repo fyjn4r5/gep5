@@ -1,33 +1,46 @@
-name: Build Geph Components
+```yaml
+name: Build Geph for Mint 21 and 22
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  build_geph:
+    name: Build Geph for Ubuntu ${{ matrix.ubuntu_version }}
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.ubuntu_version }}
+    strategy:
+      matrix:
+        ubuntu_version: [ubuntu-24.04, ubuntu-22.04]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Create build folder
+        run: mkdir ./build
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            curl \
-            libwebkit2gtk-4.0-dev \
-            libssl-dev \
+          sudo apt-get install -y --no-install-recommends \
             libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+            libappindicator3-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            strace \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            gcc \
+            clang \
+            g++ \
+            zlib1g-dev \
+            libmpc-dev \
+            libmpfr-dev \
+            libgmp-dev \
+            build-essential \
+            curl
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -40,57 +53,45 @@ jobs:
           curl -fsSL https://get.pnpm.io/install.sh | sh -
           echo "$(pnpm root -g)/.bin" >> $GITHUB_PATH
 
-      - name: Cache Rust dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Clone gephgui-wry
+        run: git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
 
-      - name: Cache pnpm dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('gephgui/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Build geph4-client
+      - name: Build gephgui
         run: |
-          cd geph4-client
-          cargo build --release
+          cd gephgui-wry/gephgui
+          pnpm install
+          pnpm build
 
       - name: Build gephgui-wry
         run: |
-          cd gephgui
-          pnpm install
-          pnpm build
-          cd ../gephgui-wry
+          cd gephgui-wry
           cargo build --release
 
-      - name: Generate PAC file
-        run: |
-          echo 'function FindProxyForURL(url, host) { return "SOCKS5 127.0.0.1:9909; DIRECT"; }' > proxy.pac
+      - name: Copy gephgui-wry
+        run: cp gephgui-wry/target/release/gephgui-wry ./build
 
-      - name: Generate VERSION file
+      - name: Download gephgui-pkg
         run: |
-          echo "${{ github.ref_name }}" > VERSION
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "${{ github.ref_name }}" > VERSION
-          else
-            echo "dev-$(git rev-parse --short HEAD)" > VERSION
-          fi
+          git clone https://github.com/geph-official/gephgui-pkg.git
+          cp -r gephgui-pkg/blobs/linux-x64/* ./build
+          cd ./build
+          bash -x pull-geph4-client.sh
+          mv ./pac-real ./pac
+          rm -rf ./pkexec ./pull-geph4-client.sh
+          echo "action_state=$(cat ./VERSION)" >> "$GITHUB_ENV"
+          echo "ubu_release=$(lsb_release -r | awk '{print $NF}' | tr -d '.')" >> "$GITHUB_ENV"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+      - name: Create TAR archive
+        run: |
+          tar -Jcvf build_${{ env.action_state }}_ubu${{ env.ubu_release }}.tar.xz ./build
+          mkdir release && cp build_*.tar.xz ./release
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: geph-build
-          path: |
-            geph4-client/target/release/geph4-client
-            gephgui-wry/target/release/gephgui-wry
-            proxy.pac
-            VERSION
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: release/*
+          tag: geph4_${{ env.action_state }}
+          overwrite: true
+          file_glob: true
+```
