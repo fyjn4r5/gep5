@@ -1,4 +1,4 @@
-name: 构建迷雾通5 Mint 21 (Ubuntu 22.04)
+name: 构建迷雾通5 二进制版本和 AppImage (Mint 21 / Ubuntu 22.04)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build_geph5:
-    name: 为 Ubuntu ${{ matrix.ubuntu_version }} 构建迷雾通5
+    name: 为 Ubuntu ${{ matrix.ubuntu_version }} 构建迷雾通5 二进制版本
     permissions:
       contents: write
     runs-on: ${{ matrix.ubuntu_version }}
@@ -16,9 +16,8 @@ jobs:
         include:
           - ubuntu_version: ubuntu-22.04
             webkit_pkg: libwebkit2gtk-4.0-dev
-          # 如果未来 GitHub 支持 ubuntu-24.04，可以加：
-          # - ubuntu_version: ubuntu-24.04
-          #   webkit_pkg: libwebkit2gtk-4.1-dev
+          - ubuntu_version: ubuntu-24.04
+            webkit_pkg: libwebkit2gtk-4.1-dev
     steps:
       - name: 创建构建文件夹
         run: mkdir ./build
@@ -27,26 +26,41 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-3-dev \
-            libappindicator3-dev \
-            ${{ matrix.webkit_pkg }} \
-            librsvg2-dev \
-            libssl-dev \
-            patchelf \
-            strace \
-            libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
+            # 基本构建工具
+            build-essential \
             gcc \
             clang \
             g++ \
-            zlib1g-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libgmp-dev \
-            build-essential \
-            curl \
             pkg-config \
-            libsoup-3.0-dev   # 👈 加这一行
+            curl \
+            wget \
+            cmake \
+            strace \
+            patchelf \
+            desktop-file-utils \
+            squashfs-tools \
+            # 图形和 UI 库
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            # WebKitGTK 和 JavaScriptCore 库
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            # SSL 和加密库
+            libssl-dev \
+            # Rust 工具链
+            rustc \
+            cargo \
+            # 其他必要工具
+            libsoup-3.0-dev
+
+      - name: 设置 PKG_CONFIG_PATH
+        run: |
+          export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
+          echo $PKG_CONFIG_PATH
 
       - name: 安装 Rust
         uses: actions-rs/toolchain@v1
@@ -110,3 +124,108 @@ jobs:
           tag: ${{ github.ref_name }}
           overwrite: true
           file_glob: true
+
+  build_geph5_appimage:
+    name: 为 Ubuntu ${{ matrix.ubuntu_version }} 构建迷雾通5 并打包为 AppImage
+    runs-on: ${{ matrix.ubuntu_version }}
+    needs: build_geph5
+    strategy:
+      matrix:
+        include:
+          - ubuntu_version: ubuntu-22.04
+            webkit_pkg: libwebkit2gtk-4.0-dev
+          - ubuntu_version: ubuntu-24.04
+            webkit_pkg: libwebkit2gtk-4.1-dev
+    steps:
+      - name: 创建构建文件夹
+        run: mkdir ./build
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            # 基本构建工具
+            build-essential \
+            gcc \
+            clang \
+            g++ \
+            pkg-config \
+            curl \
+            wget \
+            cmake \
+            strace \
+            patchelf \
+            desktop-file-utils \
+            squashfs-tools \
+            # 图形和 UI 库
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            # WebKitGTK 和 JavaScriptCore 库
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            # SSL 和加密库
+            libssl-dev \
+            # Rust 工具链
+            rustc \
+            cargo \
+            # 其他必要工具
+            libsoup-3.0-dev
+
+      - name: 设置 PKG_CONFIG_PATH
+        run: |
+          export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
+          echo $PKG_CONFIG_PATH
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: 克隆 geph5 仓库
+        run: git clone --recurse-submodules https://github.com/geph-official/geph5.git
+
+      - name: 克隆 gephgui-wry 仓库
+        run: git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
+
+      - name: 创建 AppImage 目录结构
+        run: |
+          mkdir -p Geph5.AppDir/usr/bin
+          mkdir -p Geph5.AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p Geph5.AppDir/usr/share/applications
+
+          # 复制应用程序到 Geph5.AppDir
+          cp build/geph5-client Geph5.AppDir/usr/bin/
+          cp build/gephgui-wry Geph5.AppDir/usr/bin/
+
+          # 复制图标
+          cp gephgui-wry/gephgui/icon.png Geph5.AppDir/usr/share/icons/hicolor/256x256/apps/geph5.png
+
+          # 创建 .desktop 文件
+          echo '[Desktop Entry]
+          Name=Geph5
+          Exec=geph5-client
+          Icon=geph5
+          Type=Application
+          Categories=Network;Security;' > Geph5.AppDir/usr/share/applications/geph5.desktop
+
+      - name: 创建 AppRun 启动脚本
+        run: |
+          echo '#!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="$HERE/libs:$LD_LIBRARY_PATH"
+          "$HERE/usr/bin/geph5-client" "$@"' > Geph5.AppDir/AppRun
+          chmod +x Geph5.AppDir/AppRun
+
+      - name: 安装 AppImage 工具
+        run: |
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+
+      - name: 创建 AppImage
+        run: |
+          appimagetool
