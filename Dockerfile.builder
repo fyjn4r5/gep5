@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/root/.cargo \
     RUSTUP_HOME=/root/.rustup \
     PATH="/root/.cargo/bin:${PATH}" \
-    PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig"
+    PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig"
 
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -43,7 +43,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/root/.cargo \
     RUSTUP_HOME=/root/.rustup \
     PATH="/root/.cargo/bin:${PATH}" \
-    PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig"
+    PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig"
 
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -56,7 +56,8 @@ RUN apt-get update && apt-get upgrade -y && \
     libmpc-dev libmpfr-dev libgmp-dev \
     libprotobuf-dev protobuf-compiler cmake libprotobuf-c-dev \
     libglib2.0-dev libcairo2-dev libatk1.0-dev \
-    libatk-bridge2.0-dev libxkbcommon-dev libxdo-dev && \
+    libatk-bridge2.0-dev libxkbcommon-dev libxdo-dev \
+    libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
