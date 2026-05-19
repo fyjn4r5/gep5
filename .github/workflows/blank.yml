@@ -7,6 +7,7 @@ on:
 
 env:
   DEBIAN_FRONTEND: noninteractive
+  CI: true
 
 jobs:
   build_geph5:
@@ -14,116 +15,78 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    container:
-      image: ${{ matrix.container_image }}
+    timeout-minutes: 120
     strategy:
       matrix:
         include:
           - os_version: "22.04"
-            container_image: ubuntu:22.04
-            webkit_pkg: libwebkit2gtk-4.0-dev
-            soup_pkg: libsoup2.4-dev
-            jscore_pkg: libjavascriptcoregtk-4.0-dev
+            docker_target: builder22
+            docker_tag: geph5-builder:22.04
           - os_version: "24.04"
-            container_image: ubuntu:24.04
-            webkit_pkg: libwebkit2gtk-4.1-dev
-            soup_pkg: libsoup-3.0-dev
-            jscore_pkg: libjavascriptcoregtk-4.1-dev
+            docker_target: builder24
+            docker_tag: geph5-builder:24.04
+
     steps:
-      - name: 安装基础工具
-        run: |
-          apt-get update
-          apt-get install -y curl git build-essential pkg-config sudo
+      - name: 检出当前仓库代码
+        uses: actions/checkout@v4
 
-      - name: 创建构建文件夹
-        run: mkdir ./build
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: 安装系统依赖
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            ${{ matrix.webkit_pkg }} \
-            ${{ matrix.soup_pkg }} \
-            ${{ matrix.jscore_pkg }} \
-            librsvg2-dev \
-            libssl-dev \
-            patchelf \
-            strace \
-            libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            gcc \
-            clang \
-            g++ \
-            zlib1g-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libgmp-dev \
-            curl \
-            libprotobuf-dev \
-            protobuf-compiler \
-            cmake \
-            libprotobuf-c-dev \
-            pkg-config
-
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
+      - name: 构建 Builder Docker 镜像 (${{ matrix.os_version }})
+        uses: docker/build-push-action@v6
         with:
-          node-version: 20
+          context: .
+          file: Dockerfile.builder
+          target: ${{ matrix.docker_target }}
+          tags: ${{ matrix.docker_tag }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: 克隆 geph5 仓库
-        run: git clone --recurse-submodules https://github.com/geph-official/geph5.git
-
-      - name: 构建 geph5-client
+      - name: 在 Docker 中执行构建 (${{ matrix.os_version }})
         run: |
-          cd geph5
-          cargo build --release --bin geph5-client
-          cp target/release/geph5-client ../build/
+          docker run --rm \
+            -v ${{ github.workspace }}:/src \
+            ${{ matrix.docker_tag }} \
+            bash -c '
+              set -e
+              cd /src
 
-      - name: 克隆 gephgui-wry 仓库
-        run: git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
+              echo "=== 克隆并构建 geph5-client ==="
+              git clone --recurse-submodules https://github.com/geph-official/geph5.git
+              cd geph5 && cargo build --release --bin geph5-client && cd ..
 
-      - name: 构建 gephgui
+              echo "=== 克隆并构建 gephgui-wry ==="
+              git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
+              cd gephgui-wry/gephgui 
+              pnpm install --frozen-lockfile || pnpm install
+              pnpm build && cd ..
+
+              cd gephgui-wry && cargo build --release --bin gephgui-wry && cd ..
+
+              echo "=== 准备发布文件 ==="
+              mkdir -p /src/build
+              cp geph5/target/release/geph5-client /src/build/
+              cp gephgui-wry/target/release/gephgui-wry /src/build/
+              echo "function FindProxyForURL(url, host) { return \"SOCKS5 127.0.0.1:9909; DIRECT\"; }" > /src/build/pac
+
+              if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+                echo "${{ github.ref_name }}" > /src/build/VERSION
+              else
+                echo "dev-$(git -C geph5 rev-parse --short HEAD 2>/dev/null || echo unknown)" > /src/build/VERSION
+              fi
+
+              cd /src/build
+              tar -Jcvf /src/build_geph5_ubuntu${{ matrix.os_version }}.tar.xz .
+            '
+
+      - name: 移动到 release 目录
         run: |
-          cd gephgui-wry/gephgui
-          pnpm install
-          pnpm build
+          mkdir -p release
+          mv build_geph5_ubuntu*.tar.xz release/ 2>/dev/null || true
 
-      - name: 构建 gephgui-wry
-        run: |
-          cd gephgui-wry
-          cargo build --release
-          cp target/release/gephgui-wry ../build/
-
-      - name: 生成 PAC 文件
-        run: |
-          echo 'function FindProxyForURL(url, host) { return "SOCKS5 127.0.0.1:9909; DIRECT"; }' > build/pac
-
-      - name: 生成 VERSION 文件
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "${{ github.ref_name }}" > build/VERSION
-          else
-            echo "dev-$(git -C geph5 rev-parse --short HEAD)" > build/VERSION
-          fi
-
-      - name: 创建 TAR 压缩包
-        run: |
-          cd build
-          tar -Jcvf ../build_geph5_ubuntu${{ matrix.os_version }}.tar.xz .
-          cd ..
-          mkdir -p release && mv build_*.tar.xz release/
-
-      - name: 发布二进制文件
+      - name: 发布到 GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: svenstaro/upload-release-action@v2
         with:
