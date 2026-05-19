@@ -48,6 +48,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/src \
+            -e PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig" \
             ${{ matrix.docker_tag }} \
             bash -c '
               set -e
@@ -59,7 +60,7 @@ jobs:
 
               echo "=== 克隆并构建 gephgui-wry ==="
               git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
-              cd gephgui-wry/gephgui 
+              cd gephgui-wry/gephgui
               pnpm install --frozen-lockfile || pnpm install
               pnpm build && cd ..
 
