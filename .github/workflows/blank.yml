@@ -1,4 +1,4 @@
-name: 构建迷雾通5 (Ubuntu 22.04 & 24.04)
+name: 构建迷雾通5 (Ubuntu 22.04)
 
 on:
   workflow_dispatch:
@@ -11,20 +11,11 @@ env:
 
 jobs:
   build_geph5:
-    name: 为 Ubuntu ${{ matrix.os_version }} 构建迷雾通5
+    name: 为 Ubuntu 22.04 构建迷雾通5
     permissions:
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    strategy:
-      matrix:
-        include:
-          - os_version: "22.04"
-            docker_target: builder22
-            docker_tag: geph5-builder:22.04
-          - os_version: "24.04"
-            docker_target: builder24
-            docker_tag: geph5-builder:24.04
 
     steps:
       - name: 检出当前仓库代码
@@ -33,23 +24,23 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 构建 Builder Docker 镜像 (${{ matrix.os_version }})
+      - name: 构建 Builder Docker 镜像
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.builder
-          target: ${{ matrix.docker_target }}
-          tags: ${{ matrix.docker_tag }}
+          tags: geph5-builder:22.04
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 在 Docker 中执行构建 (${{ matrix.os_version }})
+      - name: 在 Docker 中执行构建
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/src \
-            -e PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig" \
-            ${{ matrix.docker_tag }} \
+            -e PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig" \
+            -e PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
+            geph5-builder:22.04 \
             bash -c '
               set -e
               cd /src
@@ -79,13 +70,13 @@ jobs:
               fi
 
               cd /src/build
-              tar -Jcvf /src/build_geph5_ubuntu${{ matrix.os_version }}.tar.xz .
+              tar -Jcvf /src/build_geph5_ubuntu22.04.tar.xz .
             '
 
       - name: 移动到 release 目录
         run: |
           mkdir -p release
-          mv build_geph5_ubuntu*.tar.xz release/ 2>/dev/null || true
+          mv build_geph5_ubuntu22.04.tar.xz release/ 2>/dev/null || true
 
       - name: 发布到 GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
