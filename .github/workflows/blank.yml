@@ -1,4 +1,4 @@
-name: 构建迷雾通5 Mint 21 (Ubuntu 22.04)
+name: 构建迷雾通5 (Ubuntu 22.04 & 24.04)
 
 on:
   workflow_dispatch:
@@ -10,32 +10,43 @@ env:
 
 jobs:
   build_geph5:
-    name: 为 Ubuntu ${{ matrix.ubuntu_version }} 构建迷雾通5
+    name: 为 Ubuntu ${{ matrix.os_version }} 构建迷雾通5
     permissions:
       contents: write
-    runs-on: ${{ matrix.ubuntu_version }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.container_image }}
     strategy:
       matrix:
         include:
-          - ubuntu_version: ubuntu-22.04
+          - os_version: "22.04"
+            container_image: ubuntu:22.04
             webkit_pkg: libwebkit2gtk-4.0-dev
-          # 如果未来 GitHub 支持 ubuntu-24.04，可以加：
-          # - ubuntu_version: ubuntu-24.04
-          #   webkit_pkg: libwebkit2gtk-4.1-dev
+            soup_pkg: libsoup2.4-dev
+            jscore_pkg: libjavascriptcoregtk-4.0-dev
+          - os_version: "24.04"
+            container_image: ubuntu:24.04
+            webkit_pkg: libwebkit2gtk-4.1-dev
+            soup_pkg: libsoup-3.0-dev
+            jscore_pkg: libjavascriptcoregtk-4.1-dev
     steps:
+      - name: 安装基础工具
+        run: |
+          apt-get update
+          apt-get install -y curl git build-essential pkg-config sudo
+
       - name: 创建构建文件夹
         run: mkdir ./build
 
       - name: 安装系统依赖
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt-get update
+          apt-get install -y --no-install-recommends \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             ${{ matrix.webkit_pkg }} \
-            libsoup2.4-dev \
-            libjavascriptcoregtk-4.0-dev \
+            ${{ matrix.soup_pkg }} \
+            ${{ matrix.jscore_pkg }} \
             librsvg2-dev \
             libssl-dev \
             patchelf \
@@ -49,7 +60,6 @@ jobs:
             libmpc-dev \
             libmpfr-dev \
             libgmp-dev \
-            build-essential \
             curl \
             libprotobuf-dev \
             protobuf-compiler \
@@ -109,7 +119,7 @@ jobs:
       - name: 创建 TAR 压缩包
         run: |
           cd build
-          tar -Jcvf ../build_geph5_ubu2204.tar.xz .
+          tar -Jcvf ../build_geph5_ubuntu${{ matrix.os_version }}.tar.xz .
           cd ..
           mkdir -p release && mv build_*.tar.xz release/
 
