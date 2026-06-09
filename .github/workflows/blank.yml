@@ -11,6 +11,7 @@ env:
   DEBIAN_FRONTEND: noninteractive
   CI: true
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 2
 
 jobs:
   build_geph5:
@@ -91,8 +92,8 @@ jobs:
 
               echo "=== 准备发布文件 ==="
               mkdir -p /src/build
-              cp geph5/target/release/geph5-client /src/build/
-              cp gephgui-wry/target/release/gephgui-wry /src/build/
+              cp /src/geph5/target/release/geph5-client /src/build/
+              cp /src/gephgui-wry/target/release/gephgui-wry /src/build/
               echo "function FindProxyForURL(url, host) { return \"SOCKS5 127.0.0.1:9909; DIRECT\"; }" > /src/build/pac
 
               if [[ "${{ github.ref }}" == refs/tags/* ]]; then
