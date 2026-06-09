@@ -111,6 +111,12 @@ jobs:
           mkdir -p release
           mv build_geph5_ubuntu22.04.tar.xz release/ 2>/dev/null || true
 
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: geph5-ubuntu22.04
+          path: release/*
+
       - name: 发布到 GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: svenstaro/upload-release-action@v2
