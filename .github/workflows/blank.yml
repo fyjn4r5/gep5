@@ -1,6 +1,8 @@
 name: 构建迷雾通5 (Ubuntu 22.04)
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
