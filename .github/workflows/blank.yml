@@ -133,12 +133,14 @@ jobs:
           path: release/*
 
       - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="geph5_v${{ steps.version.outputs.version }}"
-          gh release create "$TAG" release/* \
-            --repo ${{ github.repository }} \
-            --title "Geph5 v${{ steps.version.outputs.version }}" \
-            --notes "自动构建于 $(date -u '+%Y-%m-%d %H:%M UTC')" \
-            2>/dev/null || true
+          gh release view "$TAG" --repo ${{ github.repository }} &>/dev/null || \
+            gh release create "$TAG" \
+              --repo ${{ github.repository }} \
+              --title "Geph5 v${{ steps.version.outputs.version }}" \
+              --notes "自动构建于 $(date -u '+%Y-%m-%d %H:%M UTC')"
           gh release upload "$TAG" release/* \
             --repo ${{ github.repository }} --clobber
