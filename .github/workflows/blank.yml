@@ -85,9 +85,9 @@ jobs:
               fi
               cd gephgui-wry/gephgui
               pnpm install --frozen-lockfile || pnpm install
-              pnpm build && cd ..
+              pnpm build && cd /src
 
-              cd gephgui-wry && cargo build --release --bin gephgui-wry && cd ..
+              cd /src/gephgui-wry && cargo build --release --bin gephgui-wry
 
               echo "=== 准备发布文件 ==="
               mkdir -p /src/build
