@@ -10,6 +10,7 @@ env:
   CI: true
   CARGO_TERM_COLOR: always
   CARGO_BUILD_JOBS: 2
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build_geph5:
@@ -35,7 +36,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -132,39 +132,13 @@ jobs:
           name: geph5-${{ steps.info.outputs.oslabel }}
           path: release/*
 
-  release:
-    name: Upload to GitHub Release
-    needs: build_geph5
-    if: success()
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Collect packages and extract version
-        id: release
+      - name: Upload to GitHub Release
         run: |
-          mkdir -p final
-          find artifacts -name '*.tar.xz' -exec cp {} final/ \;
-          ls -la final/
-          FIRST_TAR=$(ls final/*.tar.xz 2>/dev/null | head -1)
-          if [ -n "$FIRST_TAR" ]; then
-            BASENAME=$(basename "$FIRST_TAR")
-            VERSION=$(echo "$BASENAME" | sed 's/build_v\(.*\)_ubu.*\.tar\.xz/\1/')
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload to Release
-        run: |
-          TAG="geph5_v${{ steps.release.outputs.version }}"
-          gh release create "$TAG" final/* \
+          TAG="geph5_v${{ steps.version.outputs.version }}"
+          gh release create "$TAG" release/* \
             --repo ${{ github.repository }} \
-            --title "Geph5 v${{ steps.release.outputs.version }}" \
+            --title "Geph5 v${{ steps.version.outputs.version }}" \
             --notes "自动构建于 $(date -u '+%Y-%m-%d %H:%M UTC')" \
-            2>/dev/null || \
-          gh release upload "$TAG" final/* \
+            2>/dev/null || true
+          gh release upload "$TAG" release/* \
             --repo ${{ github.repository }} --clobber
