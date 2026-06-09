@@ -1,11 +1,9 @@
-name: 构建迷雾通5 (Ubuntu 22.04)
+name: 构建迷雾通5
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -15,20 +13,23 @@ env:
 
 jobs:
   build_geph5:
-    name: 为 Ubuntu 22.04 构建迷雾通5
+    name: 构建 geph5 (Ubuntu ${{ matrix.ubuntu_version }})
     permissions:
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu_version: ["22.04", "24.04"]
 
     steps:
-      - name: 检出当前仓库代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 设置 Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 缓存 Cargo 注册表和 git 仓库
+      - name: Cache Cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -39,7 +40,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: 缓存 pnpm store
+      - name: Cache pnpm
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
@@ -47,38 +48,41 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store
 
-      - name: 构建 Builder Docker 镜像
+      - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.builder
-          tags: geph5-builder:22.04
+          build-args: |
+            UBUNTU_VERSION=${{ matrix.ubuntu_version }}
+          tags: geph5-builder:${{ matrix.ubuntu_version }}
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 在 Docker 中执行构建
+      - name: Build in Docker
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/src \
             -v ~/.cargo:/root/.cargo \
             -v ~/.local/share/pnpm:/root/.local/share/pnpm \
-            -e PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig" \
-            -e PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
-            geph5-builder:22.04 \
+            -e UBUNTU_VERSION=${{ matrix.ubuntu_version }} \
+            geph5-builder:${{ matrix.ubuntu_version }} \
             bash -c '
               set -e
               cd /src
 
-              echo "=== 克隆并构建 geph5-client ==="
+              echo "=== Clone geph5 ==="
               if [ ! -d geph5 ]; then
                 git clone --recurse-submodules https://github.com/geph-official/geph5.git
               else
                 cd geph5 && git pull && git submodule update --init --recursive && cd ..
               fi
+
+              echo "=== Build geph5-client ==="
               cd geph5 && cargo build --release --bin geph5-client && cd ..
 
-              echo "=== 克隆并构建 gephgui-wry ==="
+              echo "=== Build gephgui-wry ==="
               if [ ! -d gephgui-wry ]; then
                 git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
               else
@@ -87,42 +91,76 @@ jobs:
               cd gephgui-wry/gephgui
               pnpm install --frozen-lockfile || pnpm install
               pnpm build && cd /src
-
               cd /src/gephgui-wry && cargo build --release --bin gephgui-wry
 
-              echo "=== 准备发布文件 ==="
+              echo "=== Package ==="
+              GEPH5_VERSION=$(grep "^version" /src/geph5/Cargo.toml | head -1 | cut -d"\" -f2)
+              echo "Version: $GEPH5_VERSION"
+
+              OS_LABEL="ubu${UBUNTU_VERSION/./}"
+
               mkdir -p /src/build
               cp /src/geph5/target/release/geph5-client /src/build/
               cp /src/gephgui-wry/target/release/gephgui-wry /src/build/
               echo "function FindProxyForURL(url, host) { return \"SOCKS5 127.0.0.1:9909; DIRECT\"; }" > /src/build/pac
-
-              if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-                echo "${{ github.ref_name }}" > /src/build/VERSION
-              else
-                echo "dev-$(git -C geph5 rev-parse --short HEAD 2>/dev/null || echo unknown)" > /src/build/VERSION
-              fi
+              echo "v$GEPH5_VERSION" > /src/build/VERSION
 
               cd /src/build
-              tar -Jcvf /src/build_geph5_ubuntu22.04.tar.xz .
+              tar -Jcvf "/src/build_v${GEPH5_VERSION}_${OS_LABEL}.tar.xz" .
+
+              echo "$GEPH5_VERSION" > /src/.geph5_version
+              echo "$OS_LABEL" > /src/.os_label
             '
 
-      - name: 移动到 release 目录
+      - name: Read version and os label
+        id: info
+        run: |
+          echo "version=$(cat .geph5_version)" >> $GITHUB_OUTPUT
+          echo "oslabel=$(cat .os_label)" >> $GITHUB_OUTPUT
+
+      - name: Prepare release directory
         run: |
           mkdir -p release
-          mv build_geph5_ubuntu22.04.tar.xz release/ 2>/dev/null || true
+          mv build_*.tar.xz release/
 
-      - name: 上传构建产物
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: geph5-ubuntu22.04
+          name: geph5-${{ steps.info.outputs.oslabel }}
           path: release/*
 
-      - name: 发布到 GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: svenstaro/upload-release-action@v2
+  release:
+    name: Upload to GitHub Release
+    needs: build_geph5
+    if: success()
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: release/*
-          tag: ${{ github.ref_name }}
-          overwrite: true
-          file_glob: true
+          path: artifacts
+
+      - name: Collect packages
+        run: |
+          mkdir -p final
+          find artifacts -name '*.tar.xz' -exec cp {} final/ \;
+          ls -la final/
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(curl -sL "https://raw.githubusercontent.com/geph-official/geph5/master/Cargo.toml" | grep "^version" | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload to Release
+        run: |
+          TAG="geph5_v${{ steps.version.outputs.version }}"
+          gh release create "$TAG" final/* \
+            --repo ${{ github.repository }} \
+            --title "Geph5 v${{ steps.version.outputs.version }}" \
+            --notes "自动构建于 $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            2>/dev/null || \
+          gh release upload "$TAG" final/* \
+            --repo ${{ github.repository }} --clobber
