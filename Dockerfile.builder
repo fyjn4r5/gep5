@@ -6,26 +6,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH="/root/.cargo/bin:${PATH}" \
     PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig"
 
-RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-    curl git build-essential pkg-config sudo xz-utils \
-    libgtk-3-dev libayatana-appindicator3-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    xz-utils \
+    libgtk-3-dev \
     libwebkit2gtk-4.0-dev \
     libsoup-3.0-dev \
     libsoup2.4-dev \
     libjavascriptcoregtk-4.0-dev \
-    librsvg2-dev libssl-dev patchelf strace \
-    libpango1.0-dev libgdk-pixbuf2.0-dev \
-    gcc clang g++ zlib1g-dev \
-    libmpc-dev libmpfr-dev libgmp-dev \
-    libprotobuf-dev protobuf-compiler cmake libprotobuf-c-dev \
-    libglib2.0-dev libcairo2-dev libatk1.0-dev \
-    libatk-bridge2.0-dev libxkbcommon-dev libxdo-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-RUN find /usr -name "libsoup*.pc" -exec ln -sf {} /usr/share/pkgconfig/ \; 2>/dev/null || true && \
-    find /usr -name "libsoup*.pc" -exec ln -sf {} /usr/lib/x86_64-linux-gnu/pkgconfig/ \; 2>/dev/null || true && \
-    find /usr -name "libjavascriptcoregtk*.pc" -exec ln -sf {} /usr/share/pkgconfig/ \; 2>/dev/null || true
+    librsvg2-dev \
+    libssl-dev \
+    libayatana-appindicator3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     rustup default stable
