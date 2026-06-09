@@ -48,6 +48,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store
 
+      - name: Get geph5 version
+        id: version
+        run: |
+          VERSION=$(curl -sL "https://raw.githubusercontent.com/geph-official/geph5/master/Cargo.toml" | grep "^version" | head -1 | cut -d'"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
@@ -67,6 +73,7 @@ jobs:
             -v ~/.cargo:/root/.cargo \
             -v ~/.local/share/pnpm:/root/.local/share/pnpm \
             -e UBUNTU_VERSION=${{ matrix.ubuntu_version }} \
+            -e GEPH5_VERSION=${{ steps.version.outputs.version }} \
             geph5-builder:${{ matrix.ubuntu_version }} \
             bash -c '
               set -e
@@ -94,9 +101,7 @@ jobs:
               cd /src/gephgui-wry && cargo build --release --bin gephgui-wry
 
               echo "=== Package ==="
-              GEPH5_VERSION=$(grep "^version" /src/geph5/Cargo.toml | head -1 | cut -d"\" -f2)
               echo "Version: $GEPH5_VERSION"
-
               OS_LABEL="ubu${UBUNTU_VERSION/./}"
 
               mkdir -p /src/build
@@ -108,14 +113,12 @@ jobs:
               cd /src/build
               tar -Jcvf "/src/build_v${GEPH5_VERSION}_${OS_LABEL}.tar.xz" .
 
-              echo "$GEPH5_VERSION" > /src/.geph5_version
               echo "$OS_LABEL" > /src/.os_label
             '
 
-      - name: Read version and os label
+      - name: Read os label
         id: info
         run: |
-          echo "version=$(cat .geph5_version)" >> $GITHUB_OUTPUT
           echo "oslabel=$(cat .os_label)" >> $GITHUB_OUTPUT
 
       - name: Prepare release directory
@@ -142,24 +145,25 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect packages
+      - name: Collect packages and extract version
+        id: release
         run: |
           mkdir -p final
           find artifacts -name '*.tar.xz' -exec cp {} final/ \;
           ls -la final/
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(curl -sL "https://raw.githubusercontent.com/geph-official/geph5/master/Cargo.toml" | grep "^version" | head -1 | cut -d'"' -f2)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          FIRST_TAR=$(ls final/*.tar.xz 2>/dev/null | head -1)
+          if [ -n "$FIRST_TAR" ]; then
+            BASENAME=$(basename "$FIRST_TAR")
+            VERSION=$(echo "$BASENAME" | sed 's/build_v\(.*\)_ubu.*\.tar\.xz/\1/')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload to Release
         run: |
-          TAG="geph5_v${{ steps.version.outputs.version }}"
+          TAG="geph5_v${{ steps.release.outputs.version }}"
           gh release create "$TAG" final/* \
             --repo ${{ github.repository }} \
-            --title "Geph5 v${{ steps.version.outputs.version }}" \
+            --title "Geph5 v${{ steps.release.outputs.version }}" \
             --notes "自动构建于 $(date -u '+%Y-%m-%d %H:%M UTC')" \
             2>/dev/null || \
           gh release upload "$TAG" final/* \
