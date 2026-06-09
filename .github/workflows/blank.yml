@@ -8,6 +8,7 @@ on:
 env:
   DEBIAN_FRONTEND: noninteractive
   CI: true
+  CARGO_TERM_COLOR: always
 
 jobs:
   build_geph5:
@@ -24,6 +25,25 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: 缓存 Cargo 注册表和 git 仓库
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-store
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store
+
       - name: 构建 Builder Docker 镜像
         uses: docker/build-push-action@v6
         with:
@@ -38,6 +58,8 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/src \
+            -v ~/.cargo:/root/.cargo \
+            -v ~/.local/share/pnpm:/root/.local/share/pnpm \
             -e PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig" \
             -e PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
             geph5-builder:22.04 \
@@ -46,11 +68,19 @@ jobs:
               cd /src
 
               echo "=== 克隆并构建 geph5-client ==="
-              git clone --recurse-submodules https://github.com/geph-official/geph5.git
+              if [ ! -d geph5 ]; then
+                git clone --recurse-submodules https://github.com/geph-official/geph5.git
+              else
+                cd geph5 && git pull && git submodule update --init --recursive && cd ..
+              fi
               cd geph5 && cargo build --release --bin geph5-client && cd ..
 
               echo "=== 克隆并构建 gephgui-wry ==="
-              git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
+              if [ ! -d gephgui-wry ]; then
+                git clone --recurse-submodules https://github.com/geph-official/gephgui-wry.git
+              else
+                cd gephgui-wry && git pull && git submodule update --init --recursive && cd ..
+              fi
               cd gephgui-wry/gephgui
               pnpm install --frozen-lockfile || pnpm install
               pnpm build && cd ..
